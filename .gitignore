@@ -1,0 +1,9 @@
+build/
+*.o
+*.exe
+*.out
+*.swp
+.vscode/
+.vs/
+cmake-build-*/
+bin/
