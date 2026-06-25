@@ -35,20 +35,19 @@ public:
     Chat_ser(const char* ip, uint32_t port);
     ~Chat_ser();
 
-    int handle_accept();
-    int handle_message(Message msg);
-    int broadcast_message(std::vector<char>& chat_data);
-    int private_message(std::vector<char>& chat_data);
-    int close_server();
+    void handle_accept(epoll_event *events, int maxevents);
+    void broadcast_message(std::vector<char>& chat_data);
+    void private_message(std::vector<char>& chat_data);
+    void close_server();
 
     int get_server_fd();
 
 private:
     int server_fd = -1;
-    bool is_close = false;
     int epoll_fd = -1;
+    bool is_close = false;
     Message msg_handle;
-    std::map<std::string, int> client_fd;
+    std::map<std::string, int> clients;
 };
 
 #endif

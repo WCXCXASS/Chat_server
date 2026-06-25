@@ -25,11 +25,7 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port)
     {
         perror("listen failed: ");
     }
-}
 
-int Chat_ser::handle_accept()///////// wait change
-{
-    int res;
     epoll_fd = epoll_create(1);
     if (epoll_fd == -1)
     {
@@ -44,32 +40,35 @@ int Chat_ser::handle_accept()///////// wait change
     {
         perror("epoll_ctl failed: ");
     }
+}
 
-    int maxevents = 101;
-    epoll_event events[maxevents];
-
-    while (true)
+void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait change
+{
+    int res;
+    
+    int events_n = epoll_wait(epoll_fd, events, maxevents, 0);
+    if (events_n == -1)
     {
-        int events_n = epoll_wait(epoll_fd, events, maxevents, 0);
-        if (events_n == -1)
+        perror("epoll_wait: ");
+    }
+
+    for (int i = 0; i < events_n; i++)
+    {
+        int fd = events[i].data.fd;
+        if (fd == server_fd)
         {
-            perror("epoll_wait: ");
+            sockaddr_in cli_addr;
+            socklen_t cli_size = sizeof(cli_addr);
+            int new_fd = accept(server_fd, (sockaddr*)&cli_addr, &cli_size);
+            if (new_fd == -1)
+            {
+                perror("accept failed: ");
+            }
+            msg_handle.handle_message_data(new_fd, clients);                          // waiting add thread
         }
-
-        for (int i = 0; i < events_n; i++)
+        else
         {
-            int fd = events[i].data.fd;
-            if (fd == server_fd)
-            {
-                sockaddr_in cli_addr;
-                socklen_t cli_size = sizeof(cli_addr);
-                res = accept(server_fd, (sockaddr*)&cli_addr, &cli_size);
-                msg_handle.handle_submit_data(cli_addr);
-            }
-            else
-            {
-
-            }
+            msg_handle.handle_message_data(fd, clients);                              // waiting add thread
         }
     }
 }
