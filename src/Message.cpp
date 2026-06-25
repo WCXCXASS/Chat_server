@@ -36,7 +36,7 @@ int Message_box::get_size()
 Message::Message() = default;
 Message::~Message() = default;
 
-void Message::handle_message_data(int cli_fd, std::map<std::string, int>& clients)
+void Message::handle_message_data(int cli_fd, std::map<std::string, int>& clients, std::vector<std::string>& files_name)
 {
     std::vector<char> buffer(4096);
 
@@ -86,9 +86,14 @@ void Message::handle_message_data(int cli_fd, std::map<std::string, int>& client
                     handle_chat_private_data(cli_fd, clients, packet);
                 }break;
 
+                case Msg_type::FILE_NAME:
+                {
+                    handle_file_name(files_name, packet);
+                }
+
                 case Msg_type::FILE_DATA:
                 {
-                    handle_file_data(clients, packet);
+                    handle_file_data(packet);
                 }break;
 
                 default:
@@ -169,4 +174,21 @@ void Message::handle_chat_private_data(int sou_cli_fd, std::map<std::string, int
     int des_cli_fd = it->second;
 
     send_all_message_data(des_cli_fd, msg);
+}
+
+void Message::handle_file_name(std::vector<std::string>& files_name, std::vector<char> msg)   // Msg_type + data_len + name\0
+{
+    std::string file_name = msg.data() + head_size;
+    files_name.push_back(file_name);
+}
+
+void Message::handle_file_data(std::vector<char> msg)
+{
+    std::string file_name;
+    std::ofstream file(file_name, std::ios::binary);
+    if (!file.is_open())
+    {
+        perror("file open failed: ");
+        return;
+    }
 }

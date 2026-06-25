@@ -46,6 +46,7 @@ private:
     int server_fd = -1;
     int epoll_fd = -1;
     bool is_close = false;
+    std::vector<std::string> files_name;
     Message msg_handle;
     std::map<std::string, int> clients;
 };

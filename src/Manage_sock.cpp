@@ -64,11 +64,11 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
             {
                 perror("accept failed: ");
             }
-            msg_handle.handle_message_data(new_fd, clients);                          // waiting add thread
+            msg_handle.handle_message_data(new_fd, clients, files_name);                          // waiting add thread
         }
         else
         {
-            msg_handle.handle_message_data(fd, clients);                              // waiting add thread
+            msg_handle.handle_message_data(fd, clients, files_name);                              // waiting add thread
         }
     }
 }
