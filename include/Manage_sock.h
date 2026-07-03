@@ -23,10 +23,15 @@ public:
     Chat_cli();
     ~Chat_cli();
 
-    int get_client_fd();
+    void handle_message_data(int cli_fd, Chat_ser* chat_ser, std::vector<std::string>& files_name);
+    
+    void handle_file_data(std::vector<std::string>& files_name, std::vector<char> msg);
+    void handle_file_name(std::vector<std::string>& files_name, std::vector<char> msg);
 
 private:
-    int client_fd;
+    const int head_size = 5;    // Msg_type + uint32_t
+    std::vector<char> buffer;
+    std::vector<char> chat_data;
 };
 
 class Chat_ser
@@ -36,8 +41,13 @@ public:
     ~Chat_ser();
 
     void handle_accept(epoll_event *events, int maxevents);
-    void broadcast_message(std::vector<char>& chat_data);
-    void private_message(std::vector<char>& chat_data);
+    void send_error_message(int des_fd, std::string msg);
+    void send_all_message(int des_fd, Message_box send_msg);
+    void handle_login(int cli_fd, std::vector<char> msg);
+    void handle_register(int cli_fd, std::vector<char> msg);
+    void private_message(int sou_fd, Message_box msg);
+    void broadcast_message(int sou_fd, Message_box msg);
+    void remove_client(int cli_fd);
     void close_server();
 
     int get_server_fd();
@@ -46,9 +56,11 @@ private:
     int server_fd = -1;
     int epoll_fd = -1;
     bool is_close = false;
+    int head_size = 5;
+    std::vector<char> buffer;
     std::vector<std::string> files_name;
-    Message msg_handle;
-    std::map<std::string, int> clients;
+    std::map<std::string, int> clients; !!!!!!!!!!!!
+    std::map<int, std::unique_ptr<Chat_cli>> chat_clients;
 };
 
 #endif
