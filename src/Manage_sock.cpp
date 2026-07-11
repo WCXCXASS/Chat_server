@@ -3,15 +3,15 @@
 Chat_cli::Chat_cli() = default;
 Chat_cli::~Chat_cli() = default;
 
-void Chat_cli::handle_message_data(int cli_fd, Chat_ser* chat_ser, std::vector<std::string>& files_name)
+void Chat_cli::handle_message_data(Chat_ser* chat_ser)
 {
     char tem[4096];
-    int len = recv(cli_fd, tem, sizeof(tem), 0);
+    int len = recv(client_fd, tem, sizeof(tem), 0);
     if (len <= 0)
     {
         if (len == 0)
         {
-            printf("%d finish\n", cli_fd);
+            printf("%d finish\n", client_fd);
             return;
         }
         perror("handle_message recv failed: ");
@@ -25,39 +25,41 @@ void Chat_cli::handle_message_data(int cli_fd, Chat_ser* chat_ser, std::vector<s
         memcpy(&msg_type, buffer.data(), sizeof(Msg_type));
         memcpy(&data_len, buffer.data() + sizeof(Msg_type), sizeof(uint32_t));
         data_len = ntohl(data_len);
-        if (data_len + head_size > buffer.size()) break;
+
+        if (buffer.size() < data_len + head_size) break;
+
         std::vector<char> packet(buffer.begin(), buffer.begin() + (head_size + data_len));
         buffer.erase(buffer.begin(), buffer.begin() + (head_size + data_len));
         switch (msg_type)
         {
             case Msg_type::LOGIN_DATA:
             {
-                chat_ser->handle_login(cli_fd, packet);
+                chat_ser->handle_login(client_fd, packet);
             }break;
 
             case Msg_type::REGISTER_DATA:
             {
-                chat_ser->handle_register(cli_fd, packet);
+                chat_ser->handle_register(client_fd, packet);
             }break;
 
             case Msg_type::CHAT_DATA_B:
             {
-                chat_ser->broadcast_message(cli_fd, packet);
+                chat_ser->broadcast_message(client_fd, packet);
             }break;
 
             case Msg_type::CHAT_DATA_P:
             {
-                chat_ser->private_message(cli_fd, packet);
+                chat_ser->private_message(client_fd, packet);
             }break;
 
             case Msg_type::FILE_NAME:
             {
-                handle_file_name(files_name, packet);
+                //handle_file_name(files_name, packet);
             }break;
 
             case Msg_type::FILE_DATA:
             {
-                handle_file_data(files_name, packet);
+                //handle_file_data(files_name, packet);
             }break;
 
             default:
@@ -68,13 +70,13 @@ void Chat_cli::handle_message_data(int cli_fd, Chat_ser* chat_ser, std::vector<s
     }
 }
 
-Chat_ser::Chat_ser(const char *ip, uint32_t port)
+Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
 {
     int res;
     sockaddr_in ser_addr;
     ser_addr.sin_family = AF_INET;
-    ser_addr.sin_port = htons(8888);
-    ser_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    ser_addr.sin_port = htons(port);
+    inet_pton(AF_INET, ip, &ser_addr.sin_addr);
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1)
@@ -82,13 +84,16 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port)
         perror("socket failed: ");
     }
 
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));///////////////////
+
     res = bind(server_fd, (sockaddr*)&ser_addr, sizeof(ser_addr));
     if (res == -1)
     {
         perror("bind failed: ");
     }
 
-    res = listen(server_fd, 100);
+    res = listen(server_fd, maxnums);
     if (res == -1)
     {
         perror("listen failed: ");
@@ -110,9 +115,31 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port)
     }
 }
 
-void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)
+Chat_ser::~Chat_ser() = default;
+
+void Chat_ser::remove_client(int fd)
 {
-    
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+    close(fd);
+    clients.erase(fd);
+}
+
+void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)    // Msg_type + data_len + name\0
+{
+    std::string user_name(msg.data() + head_size);
+    for (auto& [fd, cli] : clients)
+    {
+        if (user_name == cli->get_name())
+        {
+            send_error_message(cli_fd, "name repeat");
+            remove_client(cli_fd);
+            return;
+        }
+    }
+
+    clients[cli_fd]->set_fd(cli_fd);
+    clients[cli_fd]->set_name(user_name);
+    send_error_message(cli_fd, "register success");
 }
 
 void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)
@@ -149,21 +176,28 @@ void Chat_ser::private_message(int sou_fd, Message_box msg)     // Msg_type + da
 {
     const char* msg_data = msg.get_data();
     std::string user_name(msg_data + head_size);
+    int des_fd = -1;
 
-    auto it = clients.find(user_name);
-    if (it == clients.end())
+    for (auto& [fd, cli] : clients)
     {
-        send_error_message(sou_fd, "not find the client");
+        if (cli->get_name() == user_name)
+        {
+            des_fd = fd;
+            break;
+        }
+    }
+    if (des_fd == -1)
+    {
+        send_error_message(sou_fd, "not find user");
         return;
     }
-    int des_fd = it->second;
 
     send_all_message(des_fd, msg);
 }
 
 void Chat_ser::broadcast_message(int sou_fd, Message_box msg)
 {
-    for (auto& [cli_name, des_fd] : clients)
+    for (auto& [des_fd, ptr] : clients)
     {
         send_all_message(des_fd, msg);
     }
@@ -173,7 +207,8 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
 {
     int res;
     
-    int events_n = epoll_wait(epoll_fd, events, maxevents, 0);
+    printf("epoll_wait\n");
+    int events_n = epoll_wait(epoll_fd, events, maxevents, -1);
     if (events_n == -1)
     {
         perror("epoll_wait: ");
@@ -194,6 +229,8 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
                 continue;
             }
 
+            printf("client %d\n", new_fd);
+
             cli_ev.events = EPOLLIN;
             cli_ev.data.fd = new_fd;
             res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_fd, &cli_ev);
@@ -202,16 +239,16 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
                 perror("epoll_ctl failed: ");
             }
 
-            chat_clients[new_fd] = std::make_unique<Chat_cli>();
-             2. 将 new_fd 加入 epoll 后，等待事件触发
-            // 3. 当 epoll 返回该 fd 可读时，在 else 分支中调用 handle_message_data
-            //chat_clients[new_fd]->handle_message_data(new_fd, this, files_name);
-            //msg_handle.handle_message_data(new_fd, clients, files_name);                          // waiting add thread
+            clients[new_fd] = std::make_unique<Chat_cli>();
+            clients[new_fd]->set_fd(new_fd);
+
+            clients[new_fd]->handle_message_data(this);
+                                      // waiting add thread
         }
         else
         {
-            chat_clients[fd]->handle_message_data(fd, this, files_name);
-            //msg_handle.handle_message_data(fd, clients, files_name);                              // waiting add thread
+            clients[fd]->handle_message_data(this);
+                                          // waiting add thread
         }
     }
 }
@@ -219,4 +256,24 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
 int Chat_ser::get_server_fd()
 {
     return server_fd;
+}
+
+int Chat_cli::get_fd()
+{
+    return client_fd;
+}
+
+void Chat_cli::set_fd(int fd)
+{
+    client_fd = fd;
+}
+
+const std::string& Chat_cli::get_name()
+{
+    return name;
+}
+
+void Chat_cli::set_name(std::string str)
+{
+    name = str;
 }

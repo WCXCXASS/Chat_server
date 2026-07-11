@@ -13,11 +13,14 @@ Message_box::~Message_box() = default;
 void Message_box::set_data(const char* data, size_t n)
 {
     len = static_cast<uint32_t>(n);
+    msg_box.clear();
 
-    msg_box.insert(msg_box.end(), &msg_type, &msg_type + sizeof(uint8_t));
-    
+    const char* type_ptr = reinterpret_cast<const char*>(&msg_type);
+    msg_box.insert(msg_box.end(), type_ptr, type_ptr + sizeof(uint8_t));
+
     uint32_t h_len = htonl(len);
-    msg_box.insert(msg_box.end(), &h_len, &h_len + sizeof(uint32_t));
+    const char* len_ptr = reinterpret_cast<const char*>(&h_len);
+    msg_box.insert(msg_box.end(), len_ptr, len_ptr + sizeof(uint32_t));
 
     msg_box.insert(msg_box.end(), data, data + n);
 }
