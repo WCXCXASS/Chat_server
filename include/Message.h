@@ -18,7 +18,7 @@ enum class Msg_type : uint8_t
     INVALID = 0,
     FILE_DATA,
     FILE_NAME,
-    FILE_END,
+    FILE_END_MSG,
     LOGIN_DATA,
     REGISTER_DATA,     
     CHAT_DATA_P,    

@@ -71,7 +71,7 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
                 chat_ser->handle_client_file(client_fd, packet);
             }break;
 
-            case Msg_type::FILE_END:
+            case Msg_type::FILE_END_MSG:
             {
                 chat_ser->client_file_close(client_fd);
             }break;
@@ -145,7 +145,7 @@ void Chat_cli::send_file_data()
     }
     else
     {
-        Message_box msg_end(Msg_type::FILE_END);
+        Message_box msg_end(Msg_type::FILE_END_MSG);
         msg_end.set_data(nullptr, 0);
         Chat_ser::send_all_message(client_fd, msg_end);
         file.close();
