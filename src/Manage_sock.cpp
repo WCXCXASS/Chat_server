@@ -117,7 +117,7 @@ void Chat_cli::send_file_list()
 void Chat_cli::open_send_file(std::vector<char> msg)
 {
     std::string file_name = msg.data() + head_size;
-    std::string file_path("../recv/" + file_name);
+    std::string file_path("../recv_file/" + file_name);
 
     send_file_buffer.ptr_r.open(file_path, std::ios::binary);
     if (!send_file_buffer.ptr_r.is_open())
@@ -184,6 +184,11 @@ void Chat_cli::handle_file_close()
 {
     recv_file_buffer.ptr_w.close();
     files_list.push_back(recv_file_buffer.name);
+}
+
+bool Chat_cli::is_file_open()
+{
+    return file_open;
 }
 
 Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
