@@ -22,7 +22,10 @@ void Message_box::set_data(const char* data, size_t n)
     const char* len_ptr = reinterpret_cast<const char*>(&h_len);
     msg_box.insert(msg_box.end(), len_ptr, len_ptr + sizeof(uint32_t));
 
-    msg_box.insert(msg_box.end(), data, data + n);
+    if (n)
+    {
+        msg_box.insert(msg_box.end(), data, data + n);
+    }
 }
 
 const char* Message_box::get_data()
@@ -33,4 +36,9 @@ const char* Message_box::get_data()
 int Message_box::get_size()
 {
     return msg_box.size();
+}
+
+void Message_box::clear()
+{
+    msg_box.clear();
 }

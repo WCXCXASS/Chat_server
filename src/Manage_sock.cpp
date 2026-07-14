@@ -1,7 +1,15 @@
 #include "Manage_sock.h"
 
 Chat_cli::Chat_cli() = default;
-Chat_cli::~Chat_cli() = default;
+Chat_cli::~Chat_cli()
+{
+    if (recv_file_buffer.ptr_w.is_open()) {
+        recv_file_buffer.ptr_w.close();
+    }
+    if (send_file_buffer.ptr_r.is_open()) {
+        send_file_buffer.ptr_r.close();
+    }
+}
 
 void Chat_cli::handle_message_data(Chat_ser* chat_ser)
 {
@@ -12,6 +20,7 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
         if (len == 0)
         {
             printf("%d finish\n", client_fd);
+            client_fd = -1;
             return;
         }
         perror("handle_message recv failed: ");
@@ -54,12 +63,27 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
 
             case Msg_type::FILE_NAME:
             {
-                //handle_file_name(files_name, packet);
+                chat_ser->open_client_file(client_fd, packet);
             }break;
 
             case Msg_type::FILE_DATA:
             {
-                //handle_file_data(files_name, packet);
+                chat_ser->handle_client_file(client_fd, packet);
+            }break;
+
+            case Msg_type::FILE_END:
+            {
+                chat_ser->client_file_close(client_fd);
+            }break;
+
+            case Msg_type::FILE_LIST_REQ:
+            {
+                send_file_list();
+            }break;
+
+            case Msg_type::FILE_REQUST:
+            {
+                open_send_file(packet);
             }break;
 
             default:
@@ -68,6 +92,98 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
             }break;
         }
     }
+}
+
+void Chat_cli::send_file_list()
+{
+    Message_box files_list_msg(Msg_type::FILE_LIST_RESP);
+    uint32_t data_len;
+
+    for (auto& file_name : files_list)
+    {
+        data_len = static_cast<uint32_t>(file_name.size()) + 1;
+        files_list_msg.set_data(file_name.data(), data_len);
+
+        Chat_ser::send_all_message(client_fd, files_list_msg);
+
+        files_list_msg.clear();
+    }
+
+    Message_box list_end(Msg_type::FILE_LIST_END);
+    list_end.set_data(nullptr, 0);
+    Chat_ser::send_all_message(client_fd, list_end);
+}
+
+void Chat_cli::open_send_file(std::vector<char> msg)
+{
+    std::string file_name = msg.data() + head_size;
+    std::string file_path("../recv/" + file_name);
+
+    send_file_buffer.ptr_r.open(file_path, std::ios::binary);
+    if (!send_file_buffer.ptr_r.is_open())
+    {
+        perror("ifstream open file failed: ");
+        Chat_ser::send_error_message(client_fd, "not find file");
+        return;
+    }
+    file_open = true;
+}
+
+void Chat_cli::send_file_data()
+{
+    if (!file_open) return;
+
+    std::ifstream& file = send_file_buffer.ptr_r;
+    const size_t CHUNK_SIZE = 4096;
+    std::vector<char> buffer(CHUNK_SIZE);
+    if (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
+    {
+        Message_box msg(Msg_type::FILE_DATA);
+        msg.set_data(buffer.data(), file.gcount());
+        Chat_ser::send_all_message(client_fd, msg);
+        buffer.clear();
+    }
+    else
+    {
+        Message_box msg_end(Msg_type::FILE_END);
+        msg_end.set_data(nullptr, 0);
+        Chat_ser::send_all_message(client_fd, msg_end);
+        file.close();
+        file_open = false;
+    }
+}
+
+void Chat_cli::handle_file_name(std::vector<char> msg)     // Msg_type + data_len + des_name\0 + file_name\0
+{
+    std::string des_name = (msg.data() + head_size);
+    std::string file_name(msg.data() + head_size + des_name.size() + 1);
+    recv_file_buffer.name = file_name;
+
+    std::string file_path("../recv_file/" + file_name);
+    recv_file_buffer.ptr_w.open(file_name, std::ios::binary);
+
+    if (!recv_file_buffer.ptr_w.is_open())
+    {
+        perror("sfstream open file failed: ");
+        return;
+    }
+}
+
+void Chat_cli::handle_file_data(std::vector<char> msg)
+{
+    if (!recv_file_buffer.ptr_w.is_open()) return;
+
+    uint32_t data_len;
+    memcpy(&data_len, msg.data() + sizeof(uint8_t), sizeof(uint32_t));
+    data_len = ntohl(data_len);
+    
+    recv_file_buffer.ptr_w.write(msg.data() + head_size, data_len);
+}
+
+void Chat_cli::handle_file_close()
+{
+    recv_file_buffer.ptr_w.close();
+    files_list.push_back(recv_file_buffer.name);
 }
 
 Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
@@ -117,9 +233,61 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
 
 Chat_ser::~Chat_ser() = default;
 
+void Chat_ser::open_client_file(int sou_fd, std::vector<char> msg)      // Msg_type + data_len + des_name/0 + file_name/0 
+{
+    std::string des_name(msg.data() + head_size);
+    int des_fd = -1;
+    
+    for (auto& [cli_fd, cli] : clients)
+    {
+        if (cli->get_name() == des_name)
+        {
+            des_fd = cli->get_fd();
+        }
+    }
+
+    if (des_fd == -1)
+    {
+        send_error_message(sou_fd, "not find user");
+        return;
+    }
+    set_cli_cli(sou_fd, des_fd);
+    clients[des_cli[sou_fd]]->handle_file_name(msg);
+}
+
+void Chat_ser::handle_client_file(int sou_fd, std::vector<char> msg)
+{
+    clients[des_cli[sou_fd]]->handle_file_data(msg);
+}
+
+void Chat_ser::client_file_close(int sou_fd)
+{
+    clients[des_cli[sou_fd]]->handle_file_close();
+    des_cli.erase(sou_fd);
+}
+
+void Chat_ser::set_cli_cli(int sou_fd, int des_fd)
+{
+    des_cli[sou_fd] = des_fd;
+}
+
 void Chat_ser::remove_client(int fd)
 {
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+    
+    for (auto it = des_cli.begin(); it != des_cli.end();)
+    {
+        auto& [sou_fd, des_fd] = *it;
+        if (sou_fd == fd || des_fd == fd)
+        {   
+            it = des_cli.erase(it);
+        }
+        else
+        {
+            it++;
+        }
+    }
+
     close(fd);
     clients.erase(fd);
 }
@@ -216,10 +384,10 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
 
     for (int i = 0; i < events_n; i++)
     {
+        epoll_event cli_ev;
         int fd = events[i].data.fd;
         if (fd == server_fd)
         {
-            epoll_event cli_ev;
             sockaddr_in cli_addr;
             socklen_t cli_size = sizeof(cli_addr);
             int new_fd = accept(server_fd, (sockaddr*)&cli_addr, &cli_size);
@@ -241,14 +409,31 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
 
             clients[new_fd] = std::make_unique<Chat_cli>();
             clients[new_fd]->set_fd(new_fd);
-
-            clients[new_fd]->handle_message_data(this);
-                                      // waiting add thread
         }
         else
         {
-            clients[fd]->handle_message_data(this);
-                                          // waiting add thread
+            if (events[i].events & EPOLLIN)
+            {
+                clients[fd]->handle_message_data(this);
+            }
+            
+            if (events[i].events & EPOLLOUT)
+            {
+                clients[fd]->send_file_data();
+
+                if (!clients[fd]->is_file_open())
+                {
+                    cli_ev.events = EPOLLIN;
+                    cli_ev.data.fd = fd;
+                    epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &cli_ev);
+                }
+            }
+
+            if (clients.find(fd) != clients.end() && clients[fd]->get_fd() == -1)
+            {
+                remove_client(fd);
+            }
+            // waiting add thread
         }
     }
 }

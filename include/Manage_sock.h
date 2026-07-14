@@ -10,14 +10,21 @@
 #include <thread>
 #include <cstdint>
 #include <cstring>
-
-#include <functional>
+#include <fstream>
+#include <filesystem>
 #include <string>
 #include <map>
 
 #include "Message.h"
 
 class Chat_ser;
+
+struct File_context
+{
+    std::string name;
+    std::ifstream ptr_r;
+    std::ofstream ptr_w;
+};
 
 class Chat_cli
 {
@@ -27,11 +34,18 @@ public:
 
     void handle_message_data(Chat_ser* chat_ser);
     
-    void handle_file_data(std::vector<std::string>& files_name, std::vector<char> msg);
-    void handle_file_name(std::vector<std::string>& files_name, std::vector<char> msg);
+    void handle_file_name(std::vector<char> msg);
+    void handle_file_data(std::vector<char> msg);
+    void handle_file_close();
+
+    void send_file_list();
+    void send_file_data();
+    void open_send_file(std::vector<char> msg);
 
     int get_fd();
     void set_fd(int fd);
+
+    bool is_file_open();
 
     void set_name(std::string str);
     const std::string& get_name();
@@ -41,6 +55,10 @@ private:
     const int head_size = 5;    // Msg_type + uint32_t
     std::vector<char> buffer;
     std::vector<char> chat_data;
+    File_context recv_file_buffer;
+    File_context send_file_buffer;
+    bool file_open = false;
+    std::vector<std::string> files_list;
     std::string name;
 };
 
@@ -51,14 +69,20 @@ public:
     ~Chat_ser();
 
     void handle_accept(epoll_event *events, int maxevents);
-    void send_error_message(int des_fd, std::string msg);
-    void send_all_message(int des_fd, Message_box send_msg);
+    static void send_error_message(int des_fd, std::string msg);
+    static void send_all_message(int des_fd, Message_box send_msg);
 
     void handle_login(int cli_fd, std::vector<char> msg);
     void handle_register(int cli_fd, std::vector<char> msg);
 
     void private_message(int sou_fd, Message_box msg);
     void broadcast_message(int sou_fd, Message_box msg);
+
+    void open_client_file(int sou_fd, std::vector<char> msg);
+    void handle_client_file(int sou_fd, std::vector<char> msg);
+    void client_file_close(int sou_fd);
+
+    void set_cli_cli(int sou_fd, int des_fd);
 
     void remove_client(int cli_fd);
     void close_server();
@@ -71,7 +95,7 @@ private:
     bool is_close = false;
     int head_size = 5;
     std::vector<char> buffer;
-    std::vector<std::string> files_name;
+    std::map<int, int> des_cli;
     std::map<int, std::unique_ptr<Chat_cli>> clients;
 };
 

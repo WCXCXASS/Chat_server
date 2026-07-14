@@ -18,11 +18,17 @@ enum class Msg_type : uint8_t
     INVALID = 0,
     FILE_DATA,
     FILE_NAME,
+    FILE_END,
     LOGIN_DATA,
     REGISTER_DATA,     
     CHAT_DATA_P,    
     CHAT_DATA_B,
-    ERROR_RESP
+    ERROR_RESP,
+
+    FILE_LIST_REQ,
+    FILE_LIST_RESP,
+    FILE_LIST_END,
+    FILE_REQUST
 };
 
 class Message_box
@@ -35,6 +41,8 @@ public:
     void set_data(const char* data, size_t n);
     const char* get_data();
     int get_size();
+
+    void clear();
 
 private:
     Msg_type msg_type = Msg_type::INVALID;
