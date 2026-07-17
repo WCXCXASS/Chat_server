@@ -1,4 +1,5 @@
 #include "Manage_sock.h"
+#include <iostream>
 
 Chat_cli::Chat_cli() = default;
 Chat_cli::~Chat_cli()
@@ -84,6 +85,7 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
             case Msg_type::FILE_REQUST:
             {
                 open_send_file(packet);
+                chat_ser->enable_send(client_fd);
             }break;
 
             default:
@@ -116,8 +118,10 @@ void Chat_cli::send_file_list()
 
 void Chat_cli::open_send_file(std::vector<char> msg)
 {
+    std::cout << "open_send_file\n";
+
     std::string file_name = msg.data() + head_size;
-    std::string file_path("../recv_file/" + file_name);
+    std::string file_path(file_name);
 
     send_file_buffer.ptr_r.open(file_path, std::ios::binary);
     if (!send_file_buffer.ptr_r.is_open())
@@ -127,17 +131,23 @@ void Chat_cli::open_send_file(std::vector<char> msg)
         return;
     }
     file_open = true;
+
+    std::cout << "open_send_file finish\n";
 }
 
 void Chat_cli::send_file_data()
 {
     if (!file_open) return;
 
+    std::cout << "send_file_data\n";
+
     std::ifstream& file = send_file_buffer.ptr_r;
     const size_t CHUNK_SIZE = 4096;
     std::vector<char> buffer(CHUNK_SIZE);
     if (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
     {
+        std::cout << "send data: " << file.gcount() << " bit\n";
+
         Message_box msg(Msg_type::FILE_DATA);
         msg.set_data(buffer.data(), file.gcount());
         Chat_ser::send_all_message(client_fd, msg);
@@ -145,6 +155,8 @@ void Chat_cli::send_file_data()
     }
     else
     {
+        std::cout << "send file end\n";
+
         Message_box msg_end(Msg_type::FILE_END_MSG);
         msg_end.set_data(nullptr, 0);
         Chat_ser::send_all_message(client_fd, msg_end);
@@ -159,7 +171,7 @@ void Chat_cli::handle_file_name(std::vector<char> msg)     // Msg_type + data_le
     std::string file_name(msg.data() + head_size + des_name.size() + 1);
     recv_file_buffer.name = file_name;
 
-    std::string file_path("../recv_file/" + file_name);
+    std::string file_path(file_name);
     recv_file_buffer.ptr_w.open(file_name, std::ios::binary);
 
     if (!recv_file_buffer.ptr_w.is_open())
@@ -265,6 +277,18 @@ void Chat_ser::handle_client_file(int sou_fd, std::vector<char> msg)
     clients[des_cli[sou_fd]]->handle_file_data(msg);
 }
 
+void Chat_ser::enable_send(int sou_fd)
+{
+    epoll_event cli_ev;
+    cli_ev.data.fd = sou_fd;
+    cli_ev.events = EPOLLIN | EPOLLOUT;
+    int res = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, sou_fd, &cli_ev);
+    if (res == -1)
+    {
+        perror("epoll_ctl mod to EPOLLOUT failed");
+    }
+}
+
 void Chat_ser::client_file_close(int sou_fd)
 {
     clients[des_cli[sou_fd]]->handle_file_close();
@@ -299,6 +323,7 @@ void Chat_ser::remove_client(int fd)
 
 void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)    // Msg_type + data_len + name\0
 {
+    std::cout << "client registering fd = " << cli_fd << std::endl;
     std::string user_name(msg.data() + head_size);
     for (auto& [fd, cli] : clients)
     {
@@ -313,6 +338,7 @@ void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)    // Msg_type
     clients[cli_fd]->set_fd(cli_fd);
     clients[cli_fd]->set_name(user_name);
     send_error_message(cli_fd, "register success");
+    std::cout << "client register fd = " << cli_fd << std::endl;
 }
 
 void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)

@@ -78,6 +78,7 @@ public:
     void private_message(int sou_fd, Message_box msg);
     void broadcast_message(int sou_fd, Message_box msg);
 
+    void enable_send(int fd);
     void open_client_file(int sou_fd, std::vector<char> msg);
     void handle_client_file(int sou_fd, std::vector<char> msg);
     void client_file_close(int sou_fd);
