@@ -1,5 +1,5 @@
-#ifndef _MANAGE_SOCK_H_
-#define _MANAGE_SOCK_H_
+#ifndef MANAGE_SOCK_H_
+#define MANAGE_SOCK_H_
 
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -15,6 +15,7 @@
 #include <string>
 #include <map>
 
+#include "Thlog_w.h"
 #include "Message.h"
 
 class Chat_ser;

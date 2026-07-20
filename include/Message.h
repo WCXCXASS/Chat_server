@@ -1,5 +1,5 @@
-#ifndef _MESSAGE_BOX_H_
-#define _MESSAGE_BOX_H_
+#ifndef MESSAGE_BOX_H_
+#define MESSAGE_BOX_H_
 
 #include <map>
 #include <tuple>
@@ -12,6 +12,8 @@
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
+
+#include "Thlog_w.h"
 
 enum class Msg_type : uint8_t
 {

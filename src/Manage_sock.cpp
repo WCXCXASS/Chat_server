@@ -1,5 +1,7 @@
 #include "Manage_sock.h"
+#include "Logger.h"
 #include <iostream>
+#include <cstring>    // for strerror
 
 Chat_cli::Chat_cli() = default;
 Chat_cli::~Chat_cli()
@@ -20,18 +22,18 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
     {
         if (len == 0)
         {
-            printf("%d finish\n", client_fd);
+            logging::info(std::to_string(client_fd) + " finish");  // 原 printf("%d finish\n", client_fd);
             client_fd = -1;
             return;
         }
-        perror("handle_message recv failed: ");
+        logging::error("handle_message recv failed: " + std::string(strerror(errno))); // perror
         return;
     }
     buffer.insert(buffer.end(), tem, tem + len);
     while (buffer.size() >= head_size)
     {
-        Msg_type msg_type; // = //*((Msg_type*)buffer.data());
-        uint32_t data_len; // = *((uint32_t*)(buffer.data() + sizeof(Msg_type)));
+        Msg_type msg_type;
+        uint32_t data_len;
         memcpy(&msg_type, buffer.data(), sizeof(Msg_type));
         memcpy(&data_len, buffer.data() + sizeof(Msg_type), sizeof(uint32_t));
         data_len = ntohl(data_len);
@@ -90,7 +92,7 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
 
             default:
             {
-                perror("Msy_type invailed: ");
+                logging::error("Msy_type invailed: " + std::string(strerror(errno))); // perror
             }break;
         }
     }
@@ -118,7 +120,7 @@ void Chat_cli::send_file_list()
 
 void Chat_cli::open_send_file(std::vector<char> msg)
 {
-    std::cout << "open_send_file\n";
+    logging::info("open_send_file"); // std::cout
 
     std::string file_name = msg.data() + head_size;
     std::string file_path(file_name);
@@ -126,27 +128,27 @@ void Chat_cli::open_send_file(std::vector<char> msg)
     send_file_buffer.ptr_r.open(file_path, std::ios::binary);
     if (!send_file_buffer.ptr_r.is_open())
     {
-        perror("ifstream open file failed: ");
+        logging::error("ifstream open file failed: " + std::string(strerror(errno))); // perror
         Chat_ser::send_error_message(client_fd, "not find file");
         return;
     }
     file_open = true;
 
-    std::cout << "open_send_file finish\n";
+    logging::info("open_send_file finish"); // std::cout
 }
 
 void Chat_cli::send_file_data()
 {
     if (!file_open) return;
 
-    std::cout << "send_file_data\n";
+    logging::info("send_file_data"); // std::cout
 
     std::ifstream& file = send_file_buffer.ptr_r;
     const size_t CHUNK_SIZE = 4096;
     std::vector<char> buffer(CHUNK_SIZE);
     if (file.read(buffer.data(), CHUNK_SIZE) || file.gcount() > 0)
     {
-        std::cout << "send data: " << file.gcount() << " bit\n";
+        logging::info("send data: " + std::to_string(file.gcount()) + " bit"); // std::cout
 
         Message_box msg(Msg_type::FILE_DATA);
         msg.set_data(buffer.data(), file.gcount());
@@ -155,7 +157,7 @@ void Chat_cli::send_file_data()
     }
     else
     {
-        std::cout << "send file end\n";
+        logging::info("send file end"); // std::cout
 
         Message_box msg_end(Msg_type::FILE_END_MSG);
         msg_end.set_data(nullptr, 0);
@@ -165,7 +167,7 @@ void Chat_cli::send_file_data()
     }
 }
 
-void Chat_cli::handle_file_name(std::vector<char> msg)     // Msg_type + data_len + des_name\0 + file_name\0
+void Chat_cli::handle_file_name(std::vector<char> msg)
 {
     std::string des_name = (msg.data() + head_size);
     std::string file_name(msg.data() + head_size + des_name.size() + 1);
@@ -176,7 +178,7 @@ void Chat_cli::handle_file_name(std::vector<char> msg)     // Msg_type + data_le
 
     if (!recv_file_buffer.ptr_w.is_open())
     {
-        perror("sfstream open file failed: ");
+        logging::error("sfstream open file failed: " + std::string(strerror(errno))); // perror
         return;
     }
 }
@@ -214,28 +216,28 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1)
     {
-        perror("socket failed: ");
+        logging::error("socket failed: " + std::string(strerror(errno))); // perror
     }
 
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));///////////////////
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     res = bind(server_fd, (sockaddr*)&ser_addr, sizeof(ser_addr));
     if (res == -1)
     {
-        perror("bind failed: ");
+        logging::error("bind failed: " + std::string(strerror(errno))); // perror
     }
 
     res = listen(server_fd, maxnums);
     if (res == -1)
     {
-        perror("listen failed: ");
+        logging::error("listen failed: " + std::string(strerror(errno))); // perror
     }
 
     epoll_fd = epoll_create(1);
     if (epoll_fd == -1)
     {
-        perror("epoll_create failed: ");
+        logging::error("epoll_create failed: " + std::string(strerror(errno))); // perror
     }
 
     epoll_event server_ev;
@@ -244,13 +246,13 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
     res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &server_ev);
     if (res == -1)
     {
-        perror("epoll_ctl failed: ");
+        logging::error("epoll_ctl failed: " + std::string(strerror(errno))); // perror
     }
 }
 
 Chat_ser::~Chat_ser() = default;
 
-void Chat_ser::open_client_file(int sou_fd, std::vector<char> msg)      // Msg_type + data_len + des_name/0 + file_name/0 
+void Chat_ser::open_client_file(int sou_fd, std::vector<char> msg)
 {
     std::string des_name(msg.data() + head_size);
     int des_fd = -1;
@@ -285,7 +287,7 @@ void Chat_ser::enable_send(int sou_fd)
     int res = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, sou_fd, &cli_ev);
     if (res == -1)
     {
-        perror("epoll_ctl mod to EPOLLOUT failed");
+        logging::error("epoll_ctl mod to EPOLLOUT failed: " + std::string(strerror(errno))); // perror
     }
 }
 
@@ -321,9 +323,9 @@ void Chat_ser::remove_client(int fd)
     clients.erase(fd);
 }
 
-void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)    // Msg_type + data_len + name\0
+void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)
 {
-    std::cout << "client registering fd = " << cli_fd << std::endl;
+    logging::info("client registering fd = " + std::to_string(cli_fd)); // std::cout
     std::string user_name(msg.data() + head_size);
     for (auto& [fd, cli] : clients)
     {
@@ -338,7 +340,7 @@ void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)    // Msg_type
     clients[cli_fd]->set_fd(cli_fd);
     clients[cli_fd]->set_name(user_name);
     send_error_message(cli_fd, "register success");
-    std::cout << "client register fd = " << cli_fd << std::endl;
+    logging::info("client register fd = " + std::to_string(cli_fd)); // std::cout
 }
 
 void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)
@@ -357,7 +359,7 @@ void Chat_ser::send_all_message(int des_fd, Message_box send_msg)
         {
             if (len == 0) return;
 
-            perror("send failed: ");
+            logging::error("send failed: " + std::string(strerror(errno))); // perror
             break;
         }
         send_len += len;
@@ -371,7 +373,7 @@ void Chat_ser::send_error_message(int des_fd, std::string msg)
     send_all_message(des_fd, send_msg);
 }
 
-void Chat_ser::private_message(int sou_fd, Message_box msg)     // Msg_type + data_len + des_name\0 + chat_data
+void Chat_ser::private_message(int sou_fd, Message_box msg)
 {
     const char* msg_data = msg.get_data();
     std::string user_name(msg_data + head_size);
@@ -402,15 +404,15 @@ void Chat_ser::broadcast_message(int sou_fd, Message_box msg)
     }
 }
 
-void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait change
+void Chat_ser::handle_accept(epoll_event *events, int maxevents)
 {
     int res;
     
-    printf("epoll_wait\n");
+    logging::info("epoll_wait"); // printf
     int events_n = epoll_wait(epoll_fd, events, maxevents, -1);
     if (events_n == -1)
     {
-        perror("epoll_wait: ");
+        logging::error("epoll_wait: " + std::string(strerror(errno))); // perror
     }
 
     for (int i = 0; i < events_n; i++)
@@ -424,18 +426,18 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
             int new_fd = accept(server_fd, (sockaddr*)&cli_addr, &cli_size);
             if (new_fd == -1)
             {
-                perror("accept failed: ");
+                logging::error("accept failed: " + std::string(strerror(errno))); // perror
                 continue;
             }
 
-            printf("client %d\n", new_fd);
+            logging::info("client " + std::to_string(new_fd)); // printf
 
             cli_ev.events = EPOLLIN;
             cli_ev.data.fd = new_fd;
             res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_fd, &cli_ev);
             if (res == -1)
             {
-                perror("epoll_ctl failed: ");
+                logging::error("epoll_ctl failed: " + std::string(strerror(errno))); // perror
             }
 
             clients[new_fd] = std::make_unique<Chat_cli>();
@@ -464,7 +466,6 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)///////// wait c
             {
                 remove_client(fd);
             }
-            // waiting add thread
         }
     }
 }
