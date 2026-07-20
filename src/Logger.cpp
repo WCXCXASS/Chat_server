@@ -5,7 +5,7 @@ namespace logging
 {
     static Thlog_w& getLogger()
     {
-        static Thlog_w logger("./logs/");
+        static Thlog_w logger("../logs/");
         return logger;
     }
 

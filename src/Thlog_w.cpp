@@ -1,6 +1,6 @@
 #include "Thlog_w.h"
 
-Thlog_w::Thlog_w(std::string dir = "../logs/")
+Thlog_w::Thlog_w(std::string dir)
 {
     log_dir = dir;
     if (!reopen())
