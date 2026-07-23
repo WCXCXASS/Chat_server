@@ -52,7 +52,7 @@ void Thlog_w::log(Level level, const std::string& msg)
         return;
     }
 
-    std::string line = "[" + level_to_string(level) + "]" + "[" + get_current_time() + "]" + ": " + msg + "\n"; 
+    std::string line = "[" + level_to_string(level) + "]" + "[" + get_current_time() + "]" + ": " + msg;
     {
         std::lock_guard<std::mutex> lock_p(mtx_log);
         msg_qu.push(line);
@@ -116,7 +116,7 @@ void Thlog_w::write()
             }
 
             file_w.flush();
-            std::cerr << "log write close";
+            std::cerr << "log write close\n";
             break;
         }
 
