@@ -17,6 +17,7 @@
 
 #include "Thlog_w.h"
 #include "Message.h"
+#include "Sql_table.h"
 
 class Chat_ser;
 
@@ -96,6 +97,7 @@ private:
     int epoll_fd = -1;
     bool is_close = false;
     int head_size = 5;
+    Sql_table db;
     std::vector<char> buffer;
     std::map<int, int> des_cli;
     std::map<int, std::unique_ptr<Chat_cli>> clients;

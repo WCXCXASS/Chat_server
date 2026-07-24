@@ -22,11 +22,11 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
     {
         if (len == 0)
         {
-            logging::info(std::to_string(client_fd) + " finish");  // 原 printf("%d finish\n", client_fd);
+            logging::info(std::to_string(client_fd) + " finish");
             client_fd = -1;
             return;
         }
-        logging::error("handle_message recv failed: " + std::string(strerror(errno))); // perror
+        logging::error("handle_message recv failed: " + std::string(strerror(errno)));
         return;
     }
     buffer.insert(buffer.end(), tem, tem + len);
@@ -323,32 +323,43 @@ void Chat_ser::remove_client(int fd)
     clients.erase(fd);
 }
 
-void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)
+void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)   // Msg_type + data_len + username/0 + password/0
 {
     logging::info("client registering fd = " + std::to_string(cli_fd)); // std::cout
-    std::string user_name(msg.data() + head_size);
-    for (auto& [fd, cli] : clients)
+    std::string username(msg.data() + head_size);
+    std::string password(msg.data() + head_size + username.size() + 1);
+    
+    if (!db.register_user(username, password))
     {
-        if (user_name == cli->get_name())
-        {
-            send_error_message(cli_fd, "name repeat");
-            remove_client(cli_fd);
-            return;
-        }
+        send_error_message(cli_fd, "register faied: name repeat, etc");
+        return;
     }
 
     clients[cli_fd]->set_fd(cli_fd);
-    clients[cli_fd]->set_name(user_name);
+    clients[cli_fd]->set_name(username);
     send_error_message(cli_fd, "register success");
-    logging::info("client register fd = " + std::to_string(cli_fd)); // std::cout
+    logging::info("client register fd = " + std::to_string(cli_fd) + " username :" + username);
 }
 
-void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)
+void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)     // Msg_type + data_len + username/0
 {
+    std::string username(msg.data() + head_size);
+    std::string password(msg.data() + head_size + username.size() + 1);
 
+    logging::info("client logining" + username);
+
+    if (!db.login_user(username, password))
+    {
+        send_error_message(cli_fd, "login failed");
+        return;
+    }
+
+    clients[cli_fd]->set_fd(cli_fd);
+    clients[cli_fd]->set_name(username);
+    logging::info("client logined, name: " + username);
 }
 
-void Chat_ser::send_all_message(int des_fd, Message_box send_msg)
+void Chat_ser::send_all_message(int des_fd, Message_box send_msg)   
 {
     int send_all_len = send_msg.get_size();
     int send_len = 0;
