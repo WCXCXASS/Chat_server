@@ -356,6 +356,9 @@ void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)     // Msg_type +
 
     clients[cli_fd]->set_fd(cli_fd);
     clients[cli_fd]->set_name(username);
+
+    send_error_message(cli_fd, "login success");
+
     logging::info("client logined, name: " + username);
 }
 
