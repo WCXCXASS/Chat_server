@@ -40,6 +40,8 @@ public:
     Message_box(std::vector<char> msg);
     ~Message_box();
 
+    Msg_type get_type();
+    int data_len();
     void set_data(const char* data, size_t n);
     const char* get_data();
     int get_size();

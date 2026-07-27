@@ -15,6 +15,7 @@
 #include <string>
 #include <map>
 
+#include "Msg_queue.h"
 #include "Thlog_w.h"
 #include "Message.h"
 #include "Sql_table.h"
@@ -34,7 +35,7 @@ public:
     Chat_cli();
     ~Chat_cli();
 
-    void handle_message_data(Chat_ser* chat_ser);
+    void handle_message_data(Msg_que& msg_que);
     
     void handle_file_name(std::vector<char> msg);
     void handle_file_data(std::vector<char> msg);
@@ -70,6 +71,8 @@ public:
     Chat_ser(const char* ip, uint32_t port, int maxnums);
     ~Chat_ser();
 
+    void handle_th_start();
+
     void handle_accept(epoll_event *events, int maxevents);
     static void send_error_message(int des_fd, std::string msg);
     static void send_all_message(int des_fd, Message_box send_msg);
@@ -97,6 +100,7 @@ private:
     int epoll_fd = -1;
     bool is_close = false;
     int head_size = 5;
+    Msg_que msg_que{2};
     Sql_table db;
     std::vector<char> buffer;
     std::map<int, int> des_cli;

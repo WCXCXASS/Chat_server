@@ -6,9 +6,24 @@ Message_box::Message_box (Msg_type type)
 Message_box::Message_box (std::vector<char> msg)
 {
     msg_box = msg;
+
+    memcpy(&msg_type, msg.data(), sizeof(uint8_t));
+    memcpy(&len, msg.data() + sizeof(uint8_t), sizeof(uint32_t));
+
+    len = ntohl(len);
 }
 
 Message_box::~Message_box() = default;
+
+Msg_type Message_box::get_type()
+{
+    return msg_type;
+}
+
+int Message_box::data_len()
+{
+    return len;
+}
 
 void Message_box::set_data(const char* data, size_t n)
 {

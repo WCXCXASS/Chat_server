@@ -14,7 +14,7 @@ Chat_cli::~Chat_cli()
     }
 }
 
-void Chat_cli::handle_message_data(Chat_ser* chat_ser)
+void Chat_cli::handle_message_data(Msg_que& msg_que)
 {
     char tem[4096];
     int len = recv(client_fd, tem, sizeof(tem), 0);
@@ -42,6 +42,7 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
 
         std::vector<char> packet(buffer.begin(), buffer.begin() + (head_size + data_len));
         buffer.erase(buffer.begin(), buffer.begin() + (head_size + data_len));
+        /*
         switch (msg_type)
         {
             case Msg_type::LOGIN_DATA:
@@ -95,6 +96,9 @@ void Chat_cli::handle_message_data(Chat_ser* chat_ser)
                 logging::error("Msy_type invailed: " + std::string(strerror(errno))); // perror
             }break;
         }
+        */
+
+        msg_que.push({client_fd, packet});
     }
 }
 
@@ -207,6 +211,8 @@ bool Chat_cli::is_file_open()
 
 Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
 {
+    handle_th_start();
+
     int res;
     sockaddr_in ser_addr;
     ser_addr.sin_family = AF_INET;
@@ -251,6 +257,68 @@ Chat_ser::Chat_ser(const char *ip, uint32_t port, int maxnums)
 }
 
 Chat_ser::~Chat_ser() = default;
+
+void Chat_ser::handle_th_start()
+{
+    msg_que.start([this](Msg_packet msg_packet)
+    {
+        Message_box msg(msg_packet.msg);
+
+        switch (msg.get_type())
+        {
+            case Msg_type::LOGIN_DATA:
+            {
+                handle_login(msg_packet.sou_fd, msg_packet.msg);
+            }break;
+
+            case Msg_type::REGISTER_DATA:
+            {
+                handle_register(msg_packet.sou_fd, msg_packet.msg);
+            }break;
+
+            case Msg_type::CHAT_DATA_B:
+            {
+                broadcast_message(msg_packet.sou_fd, msg_packet.msg);
+            }break;
+
+            case Msg_type::CHAT_DATA_P:
+            {
+                private_message(msg_packet.sou_fd, msg_packet.msg);
+            }break;
+
+            case Msg_type::FILE_NAME:
+            {
+                open_client_file(msg_packet.sou_fd, msg_packet.msg);
+            }break;
+
+            case Msg_type::FILE_DATA:
+            {
+                handle_client_file(msg_packet.sou_fd, msg_packet.msg);
+            }break;
+
+            case Msg_type::FILE_END_MSG:
+            {
+                client_file_close(msg_packet.sou_fd);
+            }break;
+
+            case Msg_type::FILE_LIST_REQ:
+            {
+                clients[msg_packet.sou_fd]->send_file_list();
+            }break;
+
+            case Msg_type::FILE_REQUST:
+            {
+                clients[msg_packet.sou_fd]->open_send_file(msg_packet.msg);
+                enable_send(msg_packet.sou_fd);
+            }break;
+
+            default:
+            {
+                logging::error("Msy_type invailed: " + std::string(strerror(errno))); // perror
+            }break;
+        }
+    });
+}
 
 void Chat_ser::open_client_file(int sou_fd, std::vector<char> msg)
 {
@@ -422,7 +490,7 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)
 {
     int res;
     
-    logging::info("epoll_wait"); // printf
+    //logging::info("epoll_wait"); // printf
     int events_n = epoll_wait(epoll_fd, events, maxevents, -1);
     if (events_n == -1)
     {
@@ -461,7 +529,7 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)
         {
             if (events[i].events & EPOLLIN)
             {
-                clients[fd]->handle_message_data(this);
+                clients[fd]->handle_message_data(msg_que);
             }
             
             if (events[i].events & EPOLLOUT)
