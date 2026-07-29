@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "Sql_con_que.h"
 
 class Sql_table
 {
@@ -13,15 +14,15 @@ public:
     Sql_table();
     ~Sql_table();
 
-    bool connect();
-
     bool register_user(const std::string& username, const std::string& password);
 
     bool login_user(const std::string& username, const std::string& password);
 
 private:
-    MYSQL* conn_ = nullptr;
+    //MYSQL* conn_ = nullptr;
     std::string host_;
+    std::mutex mtx_sql;
+    Sql_con conn_pool{4};
 };
 
 #endif

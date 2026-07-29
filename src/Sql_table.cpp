@@ -1,29 +1,11 @@
 #include "Sql_table.h"
 #include "Logger.h"
 
-Sql_table::Sql_table()
-{
-    conn_ = mysql_init(nullptr);
-    if (conn_ == nullptr)
-    {
-        perror("mysql init failed");
-    }
-    
-    connect();
-}
+Sql_table::Sql_table() = default;
 
-Sql_table::~Sql_table()
-{
-    if (conn_ != nullptr)
-    {
-        mysql_close(conn_);
-        conn_ = nullptr;
-        std::cout << "Database connection closed\n";
-    }
+Sql_table::~Sql_table() = default;
 
-    Sql_table::connect();
-}
-
+/*
 bool Sql_table::connect()
 {
     if (mysql_real_connect(conn_, "localhost", "root", "1234", "chat_db_2", 3306, nullptr, 0) == nullptr)
@@ -35,24 +17,15 @@ bool Sql_table::connect()
     std::cout << "Connected to MySQL successfully" << std::endl;
     return true;
 }
+*/
 
 bool Sql_table::register_user(const std::string& username, const std::string& password)
 {
-    if (conn_ == nullptr || mysql_ping(conn_) != 0)
-    {
-        if (conn_ == nullptr)
-        {
-            logging::error("register_user: conn_ is nullptr");
-        }
+    MYSQL* conn_ = conn_pool.get_sql_con();
 
-        if (mysql_ping(conn_) != 0)
-        {
-            logging::info("Database connection lost, reconnecting...");
-            if (!connect())
-            {
-                logging::error("Reconnect failed");
-            }
-        }
+    if (conn_ == nullptr)
+    {
+        logging::error("register_user: conn_ is nullptr");
         return false;
     }
 
@@ -100,26 +73,18 @@ bool Sql_table::register_user(const std::string& username, const std::string& pa
     }
 
     logging::info("User registered successfully: " + username);
+
+    conn_pool.rtn_sql_con(conn_);
     return true;
 }
 
 bool Sql_table::login_user(const std::string& username, const std::string& password)
 {
-    if (conn_ == nullptr || mysql_ping(conn_) != 0)
-    {
-        if (conn_ == nullptr)
-        {
-            logging::error("register_user: conn_ is nullptr");
-        }
+    MYSQL* conn_ = conn_pool.get_sql_con();
 
-        if (mysql_ping(conn_) != 0)
-        {
-            logging::info("Database connection lost, reconnecting...");
-            if (!connect())
-            {
-                logging::error("Reconnect failed");
-            }
-        }
+    if (conn_ == nullptr)
+    {
+        logging::error("register_user: conn_ is nullptr");
         return false;
     }
 
@@ -157,6 +122,8 @@ bool Sql_table::login_user(const std::string& username, const std::string& passw
     std::string db_password = row[0] ? row[0] : "";
 
     mysql_free_result(res);
+
+    conn_pool.rtn_sql_con(conn_);
 
     if (db_password == password)
     {

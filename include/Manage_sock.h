@@ -13,6 +13,7 @@
 #include <fstream>
 #include <filesystem>
 #include <string>
+#include <mutex>
 #include <map>
 
 #include "Msg_queue.h"
@@ -60,6 +61,7 @@ private:
     std::vector<char> chat_data;
     File_context recv_file_buffer;
     File_context send_file_buffer;
+    std::mutex mtx_f;
     bool file_open = false;
     std::vector<std::string> files_list;
     std::string name;
@@ -100,11 +102,12 @@ private:
     int epoll_fd = -1;
     bool is_close = false;
     int head_size = 5;
-    Msg_que msg_que{2};
+    std::mutex mtx_cs;
+    Msg_que msg_que{4};
     Sql_table db;
     std::vector<char> buffer;
     std::map<int, int> des_cli;
-    std::map<int, std::unique_ptr<Chat_cli>> clients;
+    std::map<int, std::shared_ptr<Chat_cli>> clients;
 };
 
 #endif

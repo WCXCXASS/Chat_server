@@ -173,6 +173,7 @@ void Chat_cli::send_file_data()
 
 void Chat_cli::handle_file_name(std::vector<char> msg)
 {
+    std::unique_lock<std::mutex> lock_f(mtx_f);
     std::string des_name = (msg.data() + head_size);
     std::string file_name(msg.data() + head_size + des_name.size() + 1);
     recv_file_buffer.name = file_name;
@@ -189,6 +190,7 @@ void Chat_cli::handle_file_name(std::vector<char> msg)
 
 void Chat_cli::handle_file_data(std::vector<char> msg)
 {
+    std::unique_lock<std::mutex> lock_f(mtx_f);
     if (!recv_file_buffer.ptr_w.is_open()) return;
 
     uint32_t data_len;
@@ -200,6 +202,7 @@ void Chat_cli::handle_file_data(std::vector<char> msg)
 
 void Chat_cli::handle_file_close()
 {
+    std::unique_lock<std::mutex> lock_f(mtx_f);
     recv_file_buffer.ptr_w.close();
     files_list.push_back(recv_file_buffer.name);
 }
@@ -303,12 +306,28 @@ void Chat_ser::handle_th_start()
 
             case Msg_type::FILE_LIST_REQ:
             {
-                clients[msg_packet.sou_fd]->send_file_list();
+                std::shared_ptr<Chat_cli> client = nullptr;
+                {
+                    std::unique_lock<std::mutex> lock_cs(mtx_cs);
+                    auto it = clients.find(msg_packet.sou_fd);
+                    if (it != clients.end()) client = it->second;
+                }
+
+                if (!client) return;
+                client->send_file_list();
             }break;
 
             case Msg_type::FILE_REQUST:
             {
-                clients[msg_packet.sou_fd]->open_send_file(msg_packet.msg);
+                std::shared_ptr<Chat_cli> client = nullptr;
+                {
+                    std::unique_lock<std::mutex> lock_cs(mtx_cs);
+                    auto it = clients.find(msg_packet.sou_fd);
+                    if (it != clients.end()) client = it->second;
+                }
+
+                if (!client) return;
+                client->open_send_file(msg_packet.msg);
                 enable_send(msg_packet.sou_fd);
             }break;
 
@@ -325,11 +344,14 @@ void Chat_ser::open_client_file(int sou_fd, std::vector<char> msg)
     std::string des_name(msg.data() + head_size);
     int des_fd = -1;
     
-    for (auto& [cli_fd, cli] : clients)
     {
-        if (cli->get_name() == des_name)
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        for (auto& [cli_fd, cli] : clients)
         {
-            des_fd = cli->get_fd();
+            if (cli->get_name() == des_name)
+            {
+                des_fd = cli->get_fd();
+            }
         }
     }
 
@@ -338,13 +360,61 @@ void Chat_ser::open_client_file(int sou_fd, std::vector<char> msg)
         send_error_message(sou_fd, "not find user");
         return;
     }
-    set_cli_cli(sou_fd, des_fd);
-    clients[des_cli[sou_fd]]->handle_file_name(msg);
+
+    std::shared_ptr<Chat_cli> client;
+    {
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        des_cli[sou_fd] = des_fd;
+        client = clients[des_cli[sou_fd]];
+    }
+
+    client->handle_file_name(msg);
 }
 
 void Chat_ser::handle_client_file(int sou_fd, std::vector<char> msg)
 {
-    clients[des_cli[sou_fd]]->handle_file_data(msg);
+    std::shared_ptr<Chat_cli> client = nullptr;
+    {
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        auto it = des_cli.find(sou_fd);
+        if (it == des_cli.end())
+        {
+            logging::error("handle_client_file: des_cli not found for fd " + std::to_string(sou_fd));
+            return;
+        }
+        int des_fd = it->second;
+        auto cit = clients.find(des_fd);
+        if (cit != clients.end()) client = cit->second;
+    }
+
+    if (!client)
+    {
+        logging::error("handle_client_file: target client not found for fd " + std::to_string(sou_fd));
+        return;
+    }
+    client->handle_file_data(msg);
+}
+
+void Chat_ser::client_file_close(int sou_fd)
+{
+    std::shared_ptr<Chat_cli> client = nullptr;
+    {
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        auto it = des_cli.find(sou_fd);
+        if (it == des_cli.end()) {
+            logging::error("client_file_close: des_cli not found for fd " + std::to_string(sou_fd));
+            return;
+        }
+        int des_fd = it->second;
+        auto cit = clients.find(des_fd);
+        if (cit != clients.end()) client = cit->second;
+        des_cli.erase(it);
+    }
+    
+    if (!client) return;
+    client->handle_file_close();
+
+    send_error_message(client->get_fd(), "file finish");
 }
 
 void Chat_ser::enable_send(int sou_fd)
@@ -359,36 +429,32 @@ void Chat_ser::enable_send(int sou_fd)
     }
 }
 
-void Chat_ser::client_file_close(int sou_fd)
-{
-    clients[des_cli[sou_fd]]->handle_file_close();
-    des_cli.erase(sou_fd);
-}
-
-void Chat_ser::set_cli_cli(int sou_fd, int des_fd)
-{
-    des_cli[sou_fd] = des_fd;
-}
-
 void Chat_ser::remove_client(int fd)
 {
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
     
-    for (auto it = des_cli.begin(); it != des_cli.end();)
     {
-        auto& [sou_fd, des_fd] = *it;
-        if (sou_fd == fd || des_fd == fd)
-        {   
-            it = des_cli.erase(it);
-        }
-        else
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        for (auto it = des_cli.begin(); it != des_cli.end();)
         {
-            it++;
+            auto& [sou_fd, des_fd] = *it;
+            if (sou_fd == fd || des_fd == fd)
+            {   
+                it = des_cli.erase(it);
+            }
+            else
+            {
+                it++;
+            }
         }
-    }
 
+        if (clients[fd]->is_file_open())
+        {
+            clients[fd]->handle_file_close();
+        }
+        clients.erase(fd);
+    }
     close(fd);
-    clients.erase(fd);
 }
 
 void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)   // Msg_type + data_len + username/0 + password/0
@@ -403,8 +469,12 @@ void Chat_ser::handle_register(int cli_fd, std::vector<char> msg)   // Msg_type 
         return;
     }
 
-    clients[cli_fd]->set_fd(cli_fd);
-    clients[cli_fd]->set_name(username);
+    {//
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        clients[cli_fd]->set_fd(cli_fd);
+        clients[cli_fd]->set_name(username);
+    }//
+    
     send_error_message(cli_fd, "register success");
     logging::info("client register fd = " + std::to_string(cli_fd) + " username :" + username);
 }
@@ -422,8 +492,11 @@ void Chat_ser::handle_login(int cli_fd, std::vector<char> msg)     // Msg_type +
         return;
     }
 
-    clients[cli_fd]->set_fd(cli_fd);
-    clients[cli_fd]->set_name(username);
+    {//
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        clients[cli_fd]->set_fd(cli_fd);
+        clients[cli_fd]->set_name(username);
+    }//
 
     send_error_message(cli_fd, "login success");
 
@@ -461,14 +534,18 @@ void Chat_ser::private_message(int sou_fd, Message_box msg)
     std::string user_name(msg_data + head_size);
     int des_fd = -1;
 
-    for (auto& [fd, cli] : clients)
-    {
-        if (cli->get_name() == user_name)
+    {//
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        for (auto& [fd, cli] : clients)
         {
-            des_fd = fd;
-            break;
+            if (cli->get_name() == user_name)
+            {
+                des_fd = fd;
+                break;
+            }
         }
-    }
+    }//
+    
     if (des_fd == -1)
     {
         send_error_message(sou_fd, "not find user");
@@ -480,7 +557,16 @@ void Chat_ser::private_message(int sou_fd, Message_box msg)
 
 void Chat_ser::broadcast_message(int sou_fd, Message_box msg)
 {
-    for (auto& [des_fd, ptr] : clients)
+    std::vector<int> clis_fd;
+    {
+        std::unique_lock<std::mutex> lock_cs(mtx_cs);
+        for (auto& [des_fd, ptr] : clients)
+        {
+            clis_fd.push_back(des_fd);
+        }
+    }
+
+    for (auto des_fd : clis_fd)
     {
         send_all_message(des_fd, msg);
     }
@@ -522,21 +608,38 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)
                 logging::error("epoll_ctl failed: " + std::string(strerror(errno))); // perror
             }
 
-            clients[new_fd] = std::make_unique<Chat_cli>();
-            clients[new_fd]->set_fd(new_fd);
+            {//
+                std::unique_lock<std::mutex> lock_cs(mtx_cs);
+                clients[new_fd] = std::make_shared<Chat_cli>();
+                clients[new_fd]->set_fd(new_fd);
+            }//
         }
         else
         {
+            std::shared_ptr<Chat_cli> client = nullptr;
+            {//
+                std::unique_lock<std::mutex> lock_cs(mtx_cs);
+                auto it = clients.find(fd);
+                if (it != clients.end())
+                {
+                    client = it->second;
+                }
+            }//
+            if (!client)
+            {
+                continue;
+            }
+
             if (events[i].events & EPOLLIN)
             {
-                clients[fd]->handle_message_data(msg_que);
+                client->handle_message_data(msg_que);
             }
             
             if (events[i].events & EPOLLOUT)
             {
-                clients[fd]->send_file_data();
+                client->send_file_data();
 
-                if (!clients[fd]->is_file_open())
+                if (!client->is_file_open())
                 {
                     cli_ev.events = EPOLLIN;
                     cli_ev.data.fd = fd;
@@ -544,7 +647,7 @@ void Chat_ser::handle_accept(epoll_event *events, int maxevents)
                 }
             }
 
-            if (clients.find(fd) != clients.end() && clients[fd]->get_fd() == -1)
+            if (client->get_fd() == -1)
             {
                 remove_client(fd);
             }
