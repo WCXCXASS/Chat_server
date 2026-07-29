@@ -62,6 +62,7 @@ bool Sql_table::register_user(const std::string& username, const std::string& pa
             logging::error("Register failed: " + std::string(mysql_error(conn_)) 
                            + " (errno: " + std::to_string(err) + ")");
         }
+        conn_pool.rtn_sql_con(conn_);
         return false;
     }
 
@@ -69,6 +70,7 @@ bool Sql_table::register_user(const std::string& username, const std::string& pa
     if (affected == 0)
     {
         logging::error("Register failed: affected rows = 0, username: " + username);
+        conn_pool.rtn_sql_con(conn_);
         return false;
     }
 
@@ -102,6 +104,7 @@ bool Sql_table::login_user(const std::string& username, const std::string& passw
     if (mysql_query(conn_, sql.c_str()) != 0)
     {
         logging::error("Login query failed: " + std::string(mysql_error(conn_)));
+        conn_pool.rtn_sql_con(conn_);
         return false;
     }
 
@@ -109,6 +112,7 @@ bool Sql_table::login_user(const std::string& username, const std::string& passw
     if (res == nullptr)
     {
         logging::error("mysql_store_result failed: " + std::string(mysql_error(conn_)));
+        conn_pool.rtn_sql_con(conn_);
         return false;
     }
 
@@ -116,6 +120,7 @@ bool Sql_table::login_user(const std::string& username, const std::string& passw
     if (row == nullptr)
     {
         mysql_free_result(res);
+        conn_pool.rtn_sql_con(conn_);
         return false;
     }
 
