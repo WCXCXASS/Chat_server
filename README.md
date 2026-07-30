@@ -39,6 +39,8 @@
 ---
 
 ## 项目结构
+
+```text
 Chat_server_2.0/
 ├── CMakeLists.txt          # CMake 构建文件
 ├── README.md               # 项目说明
