@@ -63,6 +63,7 @@ private:
     File_context send_file_buffer;
     std::mutex mtx_f;
     bool file_open = false;
+    std::string base_dir = "./received_files/";
     std::vector<std::string> files_list;
     std::string name;
 };

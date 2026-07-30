@@ -127,7 +127,8 @@ void Chat_cli::open_send_file(std::vector<char> msg)
     logging::info("open_send_file"); // std::cout
 
     std::string file_name = msg.data() + head_size;
-    std::string file_path(file_name);
+    std::string user_dir = base_dir + name + "/";
+    std::string file_path = user_dir + file_name;
 
     send_file_buffer.ptr_r.open(file_path, std::ios::binary);
     if (!send_file_buffer.ptr_r.is_open())
@@ -178,8 +179,13 @@ void Chat_cli::handle_file_name(std::vector<char> msg)
     std::string file_name(msg.data() + head_size + des_name.size() + 1);
     recv_file_buffer.name = file_name;
 
-    std::string file_path(file_name);
-    recv_file_buffer.ptr_w.open(file_name, std::ios::binary);
+    std::string user_dir = base_dir + name + "/";
+    if (!std::filesystem::exists(user_dir))
+    {
+        std::filesystem::create_directories(user_dir);
+    }
+    std::string file_path = user_dir + file_name;
+    recv_file_buffer.ptr_w.open(file_path, std::ios::binary);
 
     if (!recv_file_buffer.ptr_w.is_open())
     {
