@@ -113,7 +113,7 @@ mysql_real_connect(
     "127.0.0.1",   // MySQL 服务器地址
     "root",        // 数据库用户名
     "你的密码",     // 数据库密码
-    "chat_db",     // 数据库名
+    "chat_db_2",   // 数据库名
     3306,          // 端口号
     nullptr,
     0
