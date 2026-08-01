@@ -197,11 +197,19 @@ void Chat_cli::handle_file_name(std::vector<char> msg)
 void Chat_cli::handle_file_data(std::vector<char> msg)
 {
     std::unique_lock<std::mutex> lock_f(mtx_f);
-    if (!recv_file_buffer.ptr_w.is_open()) return;
+    if (!recv_file_buffer.ptr_w.is_open())
+    {
+        logging::error("handle_file_data: file is not open, fd=" + std::to_string(client_fd) + 
+                       ", name=" + recv_file_buffer.name);
+        return;
+    }
 
     uint32_t data_len;
     memcpy(&data_len, msg.data() + sizeof(uint8_t), sizeof(uint32_t));
     data_len = ntohl(data_len);
+
+    logging::info("handle_file_data: received data_len = " + std::to_string(data_len) + " bytes");
+    logging::info("msg data =  " + std::to_string(msg.size() - 5) + "bytes");
     
     recv_file_buffer.ptr_w.write(msg.data() + head_size, data_len);
 }
@@ -210,6 +218,7 @@ void Chat_cli::handle_file_close()
 {
     std::unique_lock<std::mutex> lock_f(mtx_f);
     recv_file_buffer.ptr_w.close();
+    logging::info(recv_file_buffer.name + " : file colse");
     files_list.push_back(recv_file_buffer.name);
 }
 

@@ -55,6 +55,8 @@ public:
     const std::string& get_name();
 
 private:
+    int i = 0;
+
     int client_fd = -1;
     const int head_size = 5;    // Msg_type + uint32_t
     std::vector<char> buffer;

@@ -1,6 +1,7 @@
 #ifndef MSG_QUEUE_H_
 #define MSG_QUEUE_H_
 
+#include <deque>
 #include <vector>
 #include <queue>
 #include <mutex>
@@ -24,22 +25,25 @@ public:
     void start(std::function<void(Msg_packet)> handle_fuc);
 
     void push(Msg_packet msg);
-    void swap();
-    void handle_work(std::function<void(Msg_packet)> handle_fuc);
+    void swap(std::queue<Msg_packet>& own, std::queue<Msg_packet>& other);
+    void handle_work(int index, std::function<void(Msg_packet)> handle_fuc);
 
     void stop();
 
 private:
-    std::queue<Msg_packet> buf_que;
-    std::queue<Msg_packet> msg_que;
-    std::condition_variable cv_;
-    std::atomic<bool> has_data_ = false;
-    std::mutex mtx_m;
-    std::mutex mtx_b;
+    struct Worker_data
+    {
+        std::queue<Msg_packet> msg_que;
+        std::queue<Msg_packet> buf_que;
+        std::mutex mtx_m;
+        std::condition_variable cv_;
+        std::atomic<bool> has_data_ = false;
+        std::atomic<bool> shutdown = false;
+    };
 
+    std::deque<Worker_data> workers_data;
     int th_num = 0;
-    std::vector<std::thread> workers;
-    std::atomic<bool> shoutdown = false;
+    std::vector<std::thread> threads;
 };
 
 #endif
